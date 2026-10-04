@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Таймлайн Digital Humanities</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=PT+Serif:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f1ea;
+    --surface: #fffdf8;
+    --text: #24221e;
+    --muted: #6d675c;
+    --line: #cfc7b6;
+    --band: #e8e2d5;
+    --ext: #2d5a6b;  --ext-soft: #dcebef;
+    --dh: #8a4228;   --dh-soft: #f3e3da;
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.07);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #191815; --surface: #24221e; --text: #ece7dc; --muted: #a39c8e; --line: #47433b;
+      --band: #2b2925; --ext: #86c0d2; --ext-soft: #1f3239; --dh: #e09a7e; --dh-soft: #3a2a23;
+      --shadow: 0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #191815; --surface: #24221e; --text: #ece7dc; --muted: #a39c8e; --line: #47433b;
+    --band: #2b2925; --ext: #86c0d2; --ext-soft: #1f3239; --dh: #e09a7e; --dh-soft: #3a2a23;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Inter", system-ui, sans-serif; line-height: 1.45;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* шапка */
+  .topbar {
+    flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--bg); z-index: 5;
+  }
+  .topbar h1 { margin: 0; font-family: "PT Serif", Georgia, serif; font-size: 21px; flex: 1 1 260px; }
+  .legend { display: flex; gap: 14px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .zoom { display: flex; align-items: center; gap: 6px; }
+  .zoom button {
+    min-width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--text); font: inherit; font-size: 16px; cursor: pointer; padding: 0 10px;
+  }
+  .zoom button:hover { border-color: var(--text); }
+  .zoom button.fit { font-size: 13px; }
+  .zoom input[type=range] { width: 130px; accent-color: var(--dh); }
+
+  /* холст */
+  .viewport { flex: 1; overflow-x: auto; overflow-y: hidden; position: relative; cursor: grab; }
+  .viewport.dragging { cursor: grabbing; user-select: none; }
+  .canvas { position: relative; }
+
+  .lane-label {
+    position: absolute; font-size: 11px; text-transform: uppercase; letter-spacing: .12em;
+    font-weight: 600; padding: 3px 8px; border-radius: 4px; pointer-events: none; z-index: 1;
+  }
+  .lane-label.ext { color: var(--ext); background: var(--ext-soft); }
+  .lane-label.dh  { color: var(--dh);  background: var(--dh-soft); }
+
+  .band {
+    position: absolute; left: 0; height: 32px; background: var(--band);
+    border-top: 2px solid var(--ext); border-bottom: 2px solid var(--dh);
+  }
+  .tick {
+    position: absolute; top: 0; height: 100%; display: flex; align-items: center;
+    transform: translateX(-50%); font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap;
+  }
+  .tick::before, .tick::after {
+    content: ""; position: absolute; left: 50%; width: 1px; height: 5px; background: var(--muted); opacity: .5;
+  }
+  .tick::before { top: 0; } .tick::after { bottom: 0; }
+
+  .stem { position: absolute; width: 2px; z-index: 1; opacity: .55; }
+  .stem.ext { background: var(--ext); } .stem.dh { background: var(--dh); }
+  .dot {
+    position: absolute; width: 12px; height: 12px; border-radius: 50%; transform: translate(-50%, -50%);
+    background: var(--surface); border: 3px solid; z-index: 3;
+  }
+  .dot.ext { border-color: var(--ext); } .dot.dh { border-color: var(--dh); }
+  .spanbar { position: absolute; height: 6px; border-radius: 3px; z-index: 2; opacity: .8; }
+  .spanbar.ext { background: var(--ext); } .spanbar.dh { background: var(--dh); }
+
+  .card {
+    position: absolute; z-index: 2; background: var(--surface); border-radius: 8px; box-shadow: var(--shadow);
+    padding: 8px 12px; overflow: hidden; cursor: pointer; border-left: 4px solid;
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .card:hover { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,.08), 0 8px 22px rgba(0,0,0,.1); z-index: 4; }
+  .card.ext { border-color: var(--ext); } .card.dh { border-color: var(--dh); }
+  .card .yr { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .yr em { font-style: normal; font-weight: 500; color: var(--muted); }
+  .card.ext .yr { color: var(--ext); } .card.dh .yr { color: var(--dh); }
+  .card .ttl {
+    font-family: "PT Serif", Georgia, serif; font-weight: 700; font-size: 15px; line-height: 1.25;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  }
+  .card .txt {
+    display: none; font-size: 13px; margin-top: 5px;
+    -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+  }
+  .mode-mini .card { padding: 5px 10px; }
+  .mode-mini .card .ttl { font-size: 13px; -webkit-line-clamp: 1; }
+  .mode-mini .card .yr { font-size: 11px; }
+  .mode-full .card { padding: 10px 14px; }
+  .mode-full .card .txt { display: -webkit-box; }
+
+  /* обобщённая карточка: «стопка» событий */
+  .card.cluster {
+    border-left-style: double; border-left-width: 6px;
+    box-shadow: 4px -4px 0 -1px var(--surface), 4px -4px 0 0 var(--line), var(--shadow);
+  }
+  .mode-full .card.cluster .ttl { -webkit-line-clamp: 6; }
+  .card.cluster .ttl { font-family: "Inter", system-ui, sans-serif; font-weight: 500; font-size: 13px; color: var(--muted); }
+  .card.cluster .yr { color: var(--text); }
+
+  /* окно с описанием */
+  .modal { position: fixed; inset: 0; background: rgba(20,18,15,.45); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 20; }
+  .modal.open { display: flex; }
+  .sheet {
+    background: var(--surface); border-radius: 12px; max-width: 560px; width: 100%;
+    max-height: calc(100vh - 32px); overflow-y: auto;
+    box-shadow: 0 10px 40px rgba(0,0,0,.25); border-top: 5px solid; position: relative;
+  }
+  .sheet.ext { border-color: var(--ext); } .sheet.dh { border-color: var(--dh); }
+  .sheet .media {
+    aspect-ratio: 16 / 9; background: var(--band); display: grid; place-items: center;
+    color: var(--muted); font-size: 14px; overflow: hidden;
+  }
+  .sheet .media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .sheet .body { padding: 18px 24px 22px; }
+  .sheet .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; font-weight: 600; padding: 2px 8px; border-radius: 4px; display: inline-block; }
+  .sheet.ext .tag { background: var(--ext-soft); color: var(--ext); }
+  .sheet.dh .tag { background: var(--dh-soft); color: var(--dh); }
+  .sheet .y { font-size: 14px; font-weight: 600; color: var(--muted); margin: 10px 0 2px; }
+  .sheet h2 { margin: 0 0 10px; font-family: "PT Serif", Georgia, serif; font-size: 24px; line-height: 1.2; }
+  .sheet p { margin: 0; font-size: 16px; line-height: 1.55; }
+  .sheet .close {
+    position: absolute; top: 10px; right: 10px; width: 34px; height: 34px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; font-size: 18px; z-index: 2;
+  }
+  .sheet .back {
+    font: inherit; font-size: 14px; color: var(--muted); background: none; border: none; padding: 0; margin-bottom: 10px; cursor: pointer;
+  }
+  .sheet .back:hover { color: var(--text); }
+  .list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .list button {
+    text-align: left; font: inherit; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 12px; cursor: pointer; border-left: 4px solid;
+  }
+  .list button.ext { border-left-color: var(--ext); } .list button.dh { border-left-color: var(--dh); }
+  .list button:hover { border-color: var(--text); }
+  .list small { display: block; color: var(--muted); font-size: 12px; font-weight: 600; }
+  .list b { font-family: "PT Serif", Georgia, serif; font-size: 16px; }
+
+  @media (max-width: 640px) {
+    .topbar h1 { font-size: 18px; }
+    .zoom input[type=range] { display: none; }
+    .sheet .body { padding: 16px 18px 18px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Digital Humanities: от карты холеры до нейросетей</h1>
+  <div class="legend">
+    <span><i style="background:var(--ext)"></i>Внешние влияния</span>
+    <span><i style="background:var(--dh)"></i>Внутри DH</span>
+  </div>
+  <div class="zoom">
+    <button id="zoomOut" aria-label="Уменьшить">−</button>
+    <input type="range" id="zoomSlider" min="0" max="100" step="1" aria-label="Масштаб">
+    <button id="zoomIn" aria-label="Увеличить">+</button>
+    <button id="zoomFit" class="fit">Весь период</button>
+  </div>
+</div>
+
+<div class="viewport" id="vp"><div class="canvas" id="canvas"></div></div>
+
+<div class="modal" id="modal">
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true">
+    <button class="close" id="closeBtn" aria-label="Закрыть">×</button>
+    <div id="sheetContent"></div>
+  </div>
+</div>
+
+<script>
+/* ---------- ДАННЫЕ ----------
+   track: "ext" — внешние влияния, "dh" — внутри DH
+   start — год, по которому событие ставится на ось; end — только для периодов
+   year — подпись даты; type — тег на карточке; img — ссылка на иллюстрацию (если нет, ставится заглушка) */
+const EVENTS = [
+  // ===== Внешние влияния =====
+  { track: "ext", start: 1854, year: "1854", title: "Карта холеры Джона Сноу",
+    text: "Врач Джон Сноу нанёс случаи смертей от холеры на карту лондонского Сохо. Они скопились вокруг одной водяной колонки, и стало ясно, что болезнь передаётся через воду." },
+  { track: "ext", start: 1858, year: "1858", title: "«Роза» Флоренс Найтингейл",
+    text: "Круговая диаграмма Найтингейл показала, что солдаты в Крымской войне чаще гибли от антисанитарии, чем от ранений. Визуализация стала инструментом убеждения и реформ." },
+  { track: "ext", start: 1869, year: "1869", title: "Карта Шарля Минара",
+    text: "Минар изобразил поход Наполеона на Москву, совместив на одной схеме численность армии, маршрут, время и температуру. Это одна из лучших визуализаций данных в истории." },
+  { track: "ext", start: 1890, year: "1890", title: "Табулятор Холлерита",
+    text: "Машина Германа Холлерита обработала перепись населения США с перфокарт. Через полвека потомки этой технологии стали первыми «компьютерами» гуманитариев." },
+  { track: "ext", start: 1900, year: "1900", title: "Инфографика У. Э. Б. Дюбуа",
+    text: "Дюбуа со студентами нарисовал около 60 диаграмм о жизни афроамериканцев для Всемирной выставки в Париже. Это ранний пример визуализации как социального высказывания." },
+  { track: "ext", start: 1934, year: "1934", title: "Социограмма Якоба Морено",
+    text: "Морено изобразил отношения людей в группе как сеть из точек и линий. Так родился анализ социальных сетей, на котором позже основаны сетевые проекты DH." },
+  { track: "ext", start: 1964, year: "1964", title: "Авторство «Записок федералиста»",
+    text: "Статистики Мостеллер и Уоллес установили авторство спорных статей по частотам служебных слов. Метод стилометрии позже стал одним из главных в DH." },
+  { track: "ext", start: 1971, year: "1971", title: "Project Gutenberg",
+    text: "Майкл Харт открывает первую электронную библиотеку. Появляется идея свободной оцифровки культурного наследия." },
+  { track: "ext", start: 1979, year: "1979", title: "«Лабораторная жизнь» Латура и Вулгара",
+    text: "Латур и Вулгар показывают, что научные факты создаются с помощью приборов, записей и графиков. Книга положила начало STS, исследованиям науки и технологий." },
+  { track: "ext", start: 1980, year: "1980", title: "«Есть ли у артефактов политика?» Уиннера",
+    text: "Лэнгдон Уиннер утверждает, что технологии не нейтральны и в их устройство встроены решения о власти. Это основа критического взгляда на цифровые инструменты." },
+  { track: "ext", start: 1991, year: "1991", title: "Всемирная паутина",
+    text: "Тим Бернерс-Ли открывает World Wide Web для публики. Гипертекст и общий доступ к документам меняют представление о том, каким может быть архив и научное издание." },
+  { track: "ext", start: 1999, year: "1999", title: "«Sorting Things Out» Боукер и Стар",
+    text: "Джеффри Боукер и Сьюзан Ли Стар показывают, что любая классификация делает одни явления видимыми и скрывает другие. Это ключевой текст о метаданных и базах данных." },
+  { track: "ext", start: 2004, year: "2004", title: "Национальный корпус русского языка",
+    text: "Лингвисты запускают корпус, в котором можно искать по миллионам словоупотреблений с грамматической разметкой. Он стал базовым инструментом для работы с русским текстом." },
+  { track: "ext", start: 2006, end: 2019, year: "2006–2010-е", title: "Веб-инструменты для гуманитариев",
+    text: "Zotero, Omeka, Gephi, Voyant Tools и Palladio позволяют без программирования собирать коллекции, анализировать тексты и строить сети и карты. Цифровые методы становятся доступны каждому исследователю." },
+  { track: "ext", start: 2008, year: "2008", title: "«Конец теории» Криса Андерсона",
+    text: "Главный редактор Wired заявляет, что большие данные сделают теории ненужными. Эта провокация стала манифестом эпохи big data и главной мишенью для критики." },
+  { track: "ext", start: 2009, year: "2009", title: "Манифест вычислительной социальной науки",
+    text: "Дэвид Лейзер и соавторы описывают в журнале Science новую область, которая изучает общество по цифровым следам: звонкам, переписке, соцсетям." },
+  { track: "ext", start: 2010, year: "2010", title: "Google Ngram Viewer",
+    text: "Сервис показывает частотность слов в миллионах оцифрованных книг, а статья о «культуромике» в Science предлагает изучать культуру как большие данные." },
+  { track: "ext", start: 2011, year: "2011", title: "Data против capta",
+    text: "Джоанна Друкер предлагает заменить data («данное») на capta («взятое»): данные не существуют сами по себе, их отбирает и конструирует исследователь. Визуализация должна показывать эту интерпретацию, а не скрывать её." },
+  { track: "ext", start: 2013, year: "2013", title: "«\"Сырые данные\" — это оксюморон»",
+    text: "Сборник под редакцией Лизы Гительман утверждает, что «сырых» данных не бывает: их всегда уже «приготовили» те, кто их собирал." },
+  { track: "ext", start: 2018, year: "2018", title: "Discovery Tour",
+    text: "В Assassin's Creed появляется образовательный режим: экскурсии по реконструированному Древнему Египту без сражений. Игровая индустрия начинает работать как музей." },
+  { track: "ext", start: 2018, year: "2018", title: "Скандал с Cambridge Analytica",
+    text: "Выясняется, что данные миллионов пользователей Facebook использовались для политической рекламы. Этика данных становится публичной темой." },
+  { track: "ext", start: 2018, year: "2018", title: "«Алгоритмы угнетения» Сафии Ноубл",
+    text: "Ноубл показывает, как поисковые алгоритмы воспроизводят расовые и гендерные стереотипы. Книга переносит критику данных на алгоритмы." },
+  { track: "ext", start: 2020, year: "2020", title: "«Феминизм данных»",
+    text: "Кэтрин Д'Игнацио и Лорен Клейн предлагают принципы работы с данными, которые учитывают власть, неравенство и контекст." },
+  { track: "ext", start: 2022, year: "2022", title: "ChatGPT",
+    text: "Большие языковые модели становятся массовым инструментом. Гуманитарии получают новый способ работы с текстами, а вместе с ним и новые вопросы о достоверности и авторстве." },
+
+  // ===== Внутри DH =====
+  { track: "dh", start: 1949, year: "1949", title: "Index Thomisticus",
+    text: "Роберто Буза вместе с IBM начинает составлять конкорданс к сочинениям Фомы Аквинского на перфокарточных машинах. Это точка рождения humanities computing, и компьютер тогда понимают как быстрого помощника для составления указателей." },
+  { track: "dh", start: 1966, year: "1966", title: "Журнал Computers and the Humanities",
+    text: "У новой области появляется первая профильная площадка. В названии ещё нет слова «digital»: речь идёт о применении компьютеров." },
+  { track: "dh", start: 1973, year: "1973", title: "ALLC",
+    text: "В Лондоне создаётся Association for Literary and Linguistic Computing. Область понимают узко, как компьютерный анализ литературы и языка." },
+  { track: "dh", start: 1978, year: "1978", title: "ACH",
+    text: "В США появляется Association for Computers and the Humanities. Сообщество становится трансатлантическим." },
+  { track: "dh", start: 1987, year: "1987", title: "Text Encoding Initiative",
+    text: "Исследователи договариваются о едином стандарте разметки гуманитарных текстов. TEI до сих пор остаётся основой цифровых научных изданий." },
+  { track: "dh", start: 1987, year: "1987", title: "Рассылка Humanist",
+    text: "Уиллард Маккарти запускает первое онлайн-сообщество гуманитариев-цифровиков. Рассылка работает до сих пор." },
+  { track: "dh", start: 1992, year: "1992", title: "Ассоциация «История и компьютер»",
+    text: "В России появляется профессиональное сообщество историков, работающих с компьютерными методами. Это начало отечественной традиции DH." },
+  { track: "dh", start: 1993, year: "1993", title: "Rossetti Archive",
+    text: "Джером Макганн создаёт одно из первых гипертекстовых научных изданий. Архив превращается из хранилища в исследовательскую среду." },
+  { track: "dh", start: 1997, year: "1997", title: "Rome Reborn",
+    text: "Стартует проект трёхмерной реконструкции Древнего Рима. С него начинается 3D-моделирование в DH." },
+  { track: "dh", start: 2000, year: "2000", title: "«Дальнее чтение»",
+    text: "Франко Моретти предлагает изучать литературу через анализ тысяч текстов. Количественный подход становится программой, а не просто методом." },
+  { track: "dh", start: 2002, year: "2002", title: "«Что такое humanities computing, а что нет?»",
+    text: "Джон Ансворт утверждает, что пользоваться компьютером ещё не значит заниматься humanities computing. Суть области в том, чтобы моделировать гуманитарное знание." },
+  { track: "dh", start: 2003, year: "2003", title: "Old Bailey Online",
+    text: "Открывается база протоколов почти 200 тысяч лондонских судебных процессов. Это образец крупного исторического корпуса в открытом доступе." },
+  { track: "dh", start: 2004, year: "2004", title: "Новое имя: digital humanities",
+    text: "Издательство предлагало назвать сборник «Digitized Humanities», но Ансворт настоял на «Digital Humanities». Речь должна идти о новом способе исследования, а не об оцифровке." },
+  { track: "dh", start: 2005, year: "2005", title: "ADHO",
+    text: "Ассоциации объединяются в Alliance of Digital Humanities Organizations. Новое название закрепляется институционально." },
+  { track: "dh", start: 2009, year: "2009", title: "«Манифест DH 2.0»",
+    text: "Исследователи из Калифорнийского университета в Лос-Анджелесе описывают две волны DH. Первая была количественной: оцифровка и базы данных. Вторая качественная: интерпретация и эксперимент." },
+  { track: "dh", start: 2010, year: "2010", title: "Stanford Literary Lab",
+    text: "Моретти основывает в Стэнфорде лабораторию, где литературоведение работает как экспериментальная наука. Она становится моделью для подобных центров по всему миру." },
+  { track: "dh", start: 2010, end: 2026, year: "2010-е–2020-е", title: "Машинное распознавание рукописей",
+    text: "Платформы вроде Transkribus расшифровывают рукописные архивы с помощью машинного обучения. Миллионы страниц становятся доступны для поиска." },
+  { track: "dh", start: 2011, year: "2011", title: "«Кто свой, а кто чужой?»",
+    text: "Стивен Рэмзи заявляет, что в DH главное создавать: программировать, строить инструменты. Начинается спор «hack vs. yack» о том, что важнее, делать или рассуждать." },
+  { track: "dh", start: 2012, year: "2012", title: "Debates in the Digital Humanities",
+    text: "В сборнике Алан Лю спрашивает, где в DH культурная критика, и упрекает дисциплину в увлечении инструментами. Начинается критический поворот." },
+  { track: "dh", start: 2015, year: "2015", title: "«Прожито»",
+    text: "Российский корпус личных дневников, который создают волонтёры. Публика не только читает архив, но и сама его создаёт." },
+  { track: "dh", start: 2015, year: "2015", title: "LLC → Digital Scholarship in the Humanities",
+    text: "Главный журнал области Literary and Linguistic Computing меняет название. Узкое «computing» уступает место широкому «digital scholarship»." },
+  { track: "dh", start: 2017, year: "2017", title: "Attentat 1942",
+    text: "Историки Карлова университета создают игру о нацистской оккупации на основе свидетельств очевидцев. Игра становится формой исторического исследования и устной истории." },
+  { track: "dh", start: 2020, year: "2020", title: "Компьютерные гуманитарные исследования",
+    text: "В ноябре 2020 года состоялась первая конференция CHR. Организаторы объяснили, что исследователям, применяющим вычислительные методы в гуманитарных вопросах, не хватает площадки, где ценилась бы строгость метода: измеримые данные, математические модели, статистические выводы. Так из DH выделилось вычислительное направление, близкое к data science, а за «классическим» DH все больше закрепляется критическая и интерпретативная роль." },
+  { track: "dh", start: 2023, year: "2023", title: "Vesuvius Challenge",
+    text: "С помощью томографии и нейросетей исследователи прочитали фрагменты обугленных свитков из Геркуланума, не разворачивая их." }
+];
+
+/* тип каждого события: показывается тегом в окне и рядом с годом на карточке */
+const TYPES = {
+  "Карта холеры Джона Сноу": "Карта",
+  "«Роза» Флоренс Найтингейл": "Диаграмма",
+  "Карта Шарля Минара": "Карта",
+  "Табулятор Холлерита": "Изобретение",
+  "Инфографика У. Э. Б. Дюбуа": "Инфографика",
+  "Социограмма Якоба Морено": "Книга",
+  "Авторство «Записок федералиста»": "Исследование",
+  "Project Gutenberg": "Проект",
+  "«Лабораторная жизнь» Латура и Вулгара": "Книга",
+  "«Есть ли у артефактов политика?» Уиннера": "Статья",
+  "Всемирная паутина": "Технология",
+  "«Sorting Things Out» Боукер и Стар": "Книга",
+  "Национальный корпус русского языка": "Проект",
+  "Веб-инструменты для гуманитариев": "Инструменты",
+  "«Конец теории» Криса Андерсона": "Статья",
+  "Манифест вычислительной социальной науки": "Статья",
+  "Google Ngram Viewer": "Инструмент",
+  "Data против capta": "Статья",
+  "«\"Сырые данные\" — это оксюморон»": "Сборник",
+  "Discovery Tour": "Игра",
+  "Скандал с Cambridge Analytica": "Событие",
+  "«Алгоритмы угнетения» Сафии Ноубл": "Книга",
+  "«Феминизм данных»": "Книга",
+  "ChatGPT": "Технология",
+  "Index Thomisticus": "Проект",
+  "Журнал Computers and the Humanities": "Журнал",
+  "ALLC": "Организация",
+  "ACH": "Организация",
+  "Text Encoding Initiative": "Стандарт",
+  "Рассылка Humanist": "Сообщество",
+  "Ассоциация «История и компьютер»": "Организация",
+  "Rossetti Archive": "Проект",
+  "Rome Reborn": "Проект",
+  "«Дальнее чтение»": "Статья",
+  "«Что такое humanities computing, а что нет?»": "Статья",
+  "Old Bailey Online": "Проект",
+  "Новое имя: digital humanities": "Сборник",
+  "ADHO": "Организация",
+  "«Манифест DH 2.0»": "Манифест",
+  "Stanford Literary Lab": "Лаборатория",
+  "Машинное распознавание рукописей": "Технология",
+  "«Кто свой, а кто чужой?»": "Выступление",
+  "Debates in the Digital Humanities": "Сборник",
+  "«Прожито»": "Проект",
+  "LLC → Digital Scholarship in the Humanities": "Событие",
+  "Attentat 1942": "Игра",
+  "Компьютерные гуманитарные исследования": "Конференция",
+  "Vesuvius Challenge": "Проект"
+};
+
+/* заглушка для иллюстраций: замените ссылку или добавьте событию поле img */
+const PLACEHOLDER_IMG = "https://psv4.vkuserphoto.ru/s/v1/d2/PNLesTMitQqIqWhWriK_xOsDYLLqNPm5mHqbY136UxroSXE1sVNurOvyYBL95k0PygHQ5AFXHuv07DX4o09WaLZa4N61FUNest_H5ni_vUCT62MJO7zE24tsD_egEtemtT8tXYdReOw5/Slide_16_9_-_1_1.png";
+
+const LABELS = { ext: "Внешние влияния", dh: "Внутри DH" };
+
+/* ---------- НАСТРОЙКИ ---------- */
+const START = 1846, END = 2030;
+const PAD = 60;
+const MIN_PPY = 5, MAX_PPY = 160;     // пикселей на год
+const BAND = 32, STEM = 20, GAP = 8;
+const MODES = {
+  mini:    { w: 140, h: 44 },
+  compact: { w: 200, h: 62 },
+  full:    { w: 270, h: 150 }
+};
+function modeFor(ppy) { return ppy < 12 ? "mini" : ppy < 45 ? "compact" : "full"; }
+
+/* ---------- СОСТОЯНИЕ ---------- */
+const vp = document.getElementById("vp");
+const canvas = document.getElementById("canvas");
+const slider = document.getElementById("zoomSlider");
+let ppy = 10, axisY = 0;
+const sorted = EVENTS.map((e, i) => ({ ...e, i, type: e.type || TYPES[e.title] || "Событие" }))
+                     .sort((a, b) => a.start - b.start || a.i - b.i);
+let clusters = [];
+
+const xOf = y => PAD + (y - START) * ppy;
+const sliderFromPpy = p => Math.round(100 * Math.log(p / MIN_PPY) / Math.log(MAX_PPY / MIN_PPY));
+const ppyFromSlider = v => MIN_PPY * Math.pow(MAX_PPY / MIN_PPY, v / 100);
+function tickStep(p) { if (p < 4) return 25; if (p < 8) return 10; if (p < 22) return 5; if (p < 60) return 2; return 1; }
+function plural(n) {
+  const a = n % 10, b = n % 100;
+  if (a === 1 && b !== 11) return n + " событие";
+  if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return n + " события";
+  return n + " событий";
+}
+
+/* группы: события, чьи карточки не помещаются рядом, собираются в колонку;
+   если колонка выше допустимого числа рядов — она сворачивается в одну обобщённую карточку */
+function groupsFor(items, m) {
+  const groups = [];
+  let g = null;
+  items.forEach(e => {
+    const x = xOf(e.start);
+    if (!g || x >= g.x + m.w + GAP) { g = { x, items: [] }; groups.push(g); }
+    g.items.push(e);
+  });
+  return groups;
+}
+
+function el(cls, css, html) {
+  const n = document.createElement("div");
+  n.className = cls;
+  Object.assign(n.style, css);
+  if (html !== undefined) n.innerHTML = html;
+  canvas.appendChild(n);
+  return n;
+}
+
+function render() {
+  const mode = modeFor(ppy), m = MODES[mode];
+  canvas.className = "canvas mode-" + mode;
+  canvas.innerHTML = "";
+  clusters = [];
+
+  const half = Math.max((vp.clientHeight - BAND) / 2, STEM + m.h + 16);
+  const maxRows = Math.max(1, Math.min(4, Math.floor((half - STEM - 16) / (m.h + GAP))));
+  const width = Math.max(PAD * 2 + (END - START) * ppy, vp.clientWidth);
+  canvas.style.width = width + "px";
+  canvas.style.height = (half * 2 + BAND) + "px";
+  axisY = half + BAND / 2;
+  const top = half, bottom = half + BAND;
+
+  // ось
+  const band = el("band", { top: top + "px", width: width + "px" });
+  const step = tickStep(ppy);
+  for (let y = Math.ceil(START / step) * step; y <= END; y += step) {
+    const t = document.createElement("div");
+    t.className = "tick";
+    t.style.left = xOf(y) + "px";
+    t.textContent = y;
+    band.appendChild(t);
+  }
+  el("lane-label ext", { top: (top - 30) + "px" }, "↑ " + LABELS.ext).dataset.sticky = "1";
+  el("lane-label dh", { top: (bottom + 8) + "px" }, "↓ " + LABELS.dh).dataset.sticky = "1";
+
+  ["ext", "dh"].forEach(tr => {
+    const edge = tr === "ext" ? top : bottom;
+    const items = sorted.filter(e => e.track === tr);
+    const cardTopFor = row => {
+      const off = STEM + row * (m.h + GAP);
+      return tr === "ext" ? edge - off - m.h : edge + off;
+    };
+    const stem = (x, row) => {
+      const ct = cardTopFor(row);
+      el("stem " + tr, {
+        left: (x - 1) + "px",
+        top: (tr === "ext" ? ct + m.h : edge) + "px",
+        height: (tr === "ext" ? edge - ct - m.h : ct - edge) + "px"
+      });
+    };
+
+    // точки и полосы периодов на оси — для всех событий
+    items.forEach(e => {
+      const x = xOf(e.start);
+      if (e.end) el("spanbar " + tr, { left: x + "px", width: (xOf(e.end) - x) + "px", top: (edge - 3) + "px" });
+      el("dot " + tr, { left: x + "px", top: edge + "px" });
+    });
+
+    groupsFor(items, m).forEach(g => {
+      const left = g.x - 10;
+      if (g.items.length <= maxRows) {
+        g.items.forEach((e, row) => {
+          stem(Math.min(xOf(e.start), left + m.w - 6), row);
+          const c = el("card " + tr, {
+            left: left + "px", top: cardTopFor(row) + "px", width: m.w + "px", height: m.h + "px"
+          }, `<div class="yr">${e.year} <em>· ${e.type}</em></div><div class="ttl">${e.title}</div><div class="txt">${e.text}</div>`);
+          c.dataset.idx = sorted.indexOf(e);
+          c.title = e.year + " — " + e.title;
+        });
+      } else {
+        const first = g.items[0], last = g.items[g.items.length - 1];
+        const range = first.start === last.start ? first.year : `${first.start}–${last.start}`;
+        stem(g.x, 0);
+        const c = el("card cluster " + tr, {
+          left: left + "px", top: cardTopFor(0) + "px", width: m.w + "px", height: m.h + "px"
+        }, `<div class="yr">${plural(g.items.length)} · ${range}</div><div class="ttl">${g.items.map(e => e.title).join(" · ")}</div>`);
+        c.dataset.cluster = clusters.length;
+        c.title = "Приблизить: " + range;
+        clusters.push(g.items);
+      }
+    });
+  });
+
+  slider.value = sliderFromPpy(ppy);
+  placeLabels();
+}
+
+function placeLabels() {
+  canvas.querySelectorAll("[data-sticky]").forEach(n => n.style.left = (vp.scrollLeft + 16) + "px");
+}
+vp.addEventListener("scroll", placeLabels);
+
+/* ---------- МАСШТАБ ---------- */
+function zoomTo(newPpy, anchorClientX) {
+  newPpy = Math.min(MAX_PPY, Math.max(MIN_PPY, newPpy));
+  const rect = vp.getBoundingClientRect();
+  const ax = anchorClientX === undefined ? vp.clientWidth / 2 : anchorClientX - rect.left;
+  const yearAt = START + (vp.scrollLeft + ax - PAD) / ppy;
+  ppy = newPpy;
+  render();
+  vp.scrollLeft = xOf(yearAt) - ax;
+}
+function fitAll() {
+  zoomTo((vp.clientWidth - PAD * 2) / (END - START));
+  vp.scrollLeft = 0;
+}
+
+/* клик по обобщённой карточке: приблизить период, а если дальше некуда — показать список */
+function openCluster(items) {
+  const y0 = items[0].start, y1 = items[items.length - 1].start;
+  const span = y1 - y0;
+  const target = span > 0 ? (vp.clientWidth * 0.6) / span : MAX_PPY;
+  if (span === 0 || ppy >= MAX_PPY * 0.98) { openList(items); return; }
+  zoomTo(Math.max(ppy * 1.6, Math.min(MAX_PPY, target)));
+  vp.scrollLeft = xOf((y0 + y1) / 2) - vp.clientWidth / 2;
+}
+
+document.getElementById("zoomIn").onclick = () => zoomTo(ppy * 1.5);
+document.getElementById("zoomOut").onclick = () => zoomTo(ppy / 1.5);
+document.getElementById("zoomFit").onclick = fitAll;
+slider.addEventListener("input", () => zoomTo(ppyFromSlider(+slider.value)));
+
+vp.addEventListener("wheel", ev => {
+  if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) return;   // горизонтальный жест трекпада — обычная прокрутка
+  ev.preventDefault();
+  zoomTo(ppy * Math.exp(-ev.deltaY * 0.0015), ev.clientX);
+}, { passive: false });
+
+/* ---------- ПЕРЕТАСКИВАНИЕ ---------- */
+let drag = null, wasDrag = false;
+vp.addEventListener("pointerdown", ev => {
+  if (ev.pointerType !== "mouse" || ev.button !== 0) return;
+  drag = { x: ev.clientX, l: vp.scrollLeft, moved: false };
+});
+window.addEventListener("pointermove", ev => {
+  if (!drag) return;
+  const dx = ev.clientX - drag.x;
+  if (!drag.moved && Math.abs(dx) > 4) { drag.moved = true; vp.classList.add("dragging"); }
+  if (drag.moved) vp.scrollLeft = drag.l - dx;
+});
+window.addEventListener("pointerup", () => {
+  if (drag) wasDrag = drag.moved;
+  drag = null; vp.classList.remove("dragging");
+});
+
+/* ---------- ОКНО ---------- */
+const modal = document.getElementById("modal"), sheet = document.getElementById("sheet");
+const content = document.getElementById("sheetContent");
+let listItems = null;
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function openEvent(e, fromList) {
+  sheet.className = "sheet " + e.track;
+  content.innerHTML = `
+    <div class="media"><img alt="" src="${esc(e.img || PLACEHOLDER_IMG)}"></div>
+    <div class="body">
+      ${fromList ? '<button class="back" id="backBtn">← К списку</button><br>' : ""}
+      <span class="tag">${esc(e.type)}</span>
+      <div class="y">${esc(e.year)}</div>
+      <h2>${esc(e.title)}</h2>
+      <p>${esc(e.text)}</p>
+    </div>`;
+  const img = content.querySelector("img");
+  img.onerror = () => { img.parentNode.textContent = "Иллюстрация"; };
+  if (fromList) document.getElementById("backBtn").onclick = () => openList(listItems);
+  modal.classList.add("open");
+  sheet.scrollTop = 0;
+}
+function openList(items) {
+  listItems = items;
+  sheet.className = "sheet " + items[0].track;
+  const first = items[0], last = items[items.length - 1];
+  const range = first.start === last.start ? first.year : `${first.start}–${last.start}`;
+  content.innerHTML = `
+    <div class="body">
+      <div class="y">${esc(range)}</div>
+      <h2>${plural(items.length)}</h2>
+      <div class="list">${items.map((e, k) =>
+        `<button class="${e.track}" data-k="${k}"><small>${esc(e.year)} · ${esc(e.type)}</small><b>${esc(e.title)}</b></button>`).join("")}
+      </div>
+    </div>`;
+  content.querySelectorAll(".list button").forEach(b => b.onclick = () => openEvent(items[+b.dataset.k], true));
+  modal.classList.add("open");
+}
+function closeModal() { modal.classList.remove("open"); }
+
+canvas.addEventListener("click", ev => {
+  if (wasDrag) { wasDrag = false; return; }
+  const card = ev.target.closest(".card");
+  if (!card) return;
+  if (card.dataset.cluster !== undefined) openCluster(clusters[+card.dataset.cluster]);
+  else openEvent(sorted[+card.dataset.idx], false);
+});
+document.getElementById("closeBtn").onclick = closeModal;
+modal.addEventListener("click", ev => { if (ev.target === modal) closeModal(); });
+
+document.addEventListener("keydown", ev => {
+  if (modal.classList.contains("open")) { if (ev.key === "Escape") closeModal(); return; }
+  if (ev.key === "+" || ev.key === "=") zoomTo(ppy * 1.5);
+  if (ev.key === "-") zoomTo(ppy / 1.5);
+  if (ev.key === "ArrowRight") vp.scrollBy({ left: 300, behavior: "smooth" });
+  if (ev.key === "ArrowLeft") vp.scrollBy({ left: -300, behavior: "smooth" });
+});
+
+window.addEventListener("resize", () => zoomTo(ppy));
+
+/* старт: весь период целиком */
+render();
+fitAll();
+</script>
+</body>
+</html>
